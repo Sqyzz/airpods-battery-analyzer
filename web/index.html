@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AirPods 电量分析器</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="page-header">
+    <div>
+      <h1>AirPods 电量分析器</h1>
+      <p class="subtitle">读取本机统一日志，分析耳机电量消耗与使用会话</p>
+    </div>
+    <span class="local-badge" title="所有数据只在本机处理，不会上传">仅本地</span>
+  </header>
+
+  <main>
+    <section class="panel controls">
+      <div class="control-row">
+        <div class="field grow">
+          <label for="deviceSelect">设备</label>
+          <select id="deviceSelect">
+            <option value="">正在读取设备…</option>
+          </select>
+        </div>
+        <div class="field shrink">
+          <label for="scanDays">扫描范围</label>
+          <select id="scanDays">
+            <option value="1">最近 1 天</option>
+            <option value="7">最近 7 天</option>
+            <option value="30">最近 30 天（较慢）</option>
+          </select>
+        </div>
+        <div class="field no-label">
+          <button id="scanBtn" class="secondary">扫描设备</button>
+        </div>
+      </div>
+
+      <div class="control-row">
+        <div class="field grow">
+          <label for="manualAddress">或手动输入蓝牙地址（优先于上方选择）</label>
+          <input id="manualAddress" placeholder="例如 CC:4B:04:2C:FE:08" spellcheck="false"
+                 autocomplete="off">
+        </div>
+      </div>
+
+      <div class="control-row">
+        <div class="field grow">
+          <label>时间范围</label>
+          <div class="segmented" id="rangeButtons">
+            <button class="range-btn" data-range="today">今天</button>
+            <button class="range-btn active" data-range="7d">最近 7 天</button>
+            <button class="range-btn" data-range="30d">最近 30 天</button>
+            <button class="range-btn" data-range="custom">自定义</button>
+          </div>
+          <div id="customRange" class="custom-range hidden">
+            <input type="date" id="customStart">
+            <span>至</span>
+            <input type="date" id="customEnd">
+          </div>
+        </div>
+      </div>
+
+      <div class="control-row actions">
+        <button id="analyzeBtn" class="primary">分析</button>
+        <button id="cancelBtn" class="ghost hidden">取消抓取</button>
+      </div>
+
+      <div id="status" class="status hidden" role="status" aria-live="polite"></div>
+    </section>
+
+    <section id="summary" class="summary hidden">
+      <div class="stat-card">
+        <span class="stat-label">使用会话</span>
+        <strong id="statSessions">—</strong>
+        <span class="stat-hint">段连续使用</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">总使用时长</span>
+        <strong id="statDuration">—</strong>
+        <span class="stat-hint">仅未充电区间</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">左耳耗电</span>
+        <strong id="statDropL">—</strong>
+        <span class="stat-hint" id="statRateL">—</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">右耳耗电</span>
+        <strong id="statDropR">—</strong>
+        <span class="stat-hint" id="statRateR">—</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">有效样本</span>
+        <strong id="statSamples">—</strong>
+        <span class="stat-hint">条电量广播</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">充电会话</span>
+        <strong id="statCharging">—</strong>
+        <span class="stat-hint" id="statCaseDrain">—</span>
+      </div>
+    </section>
+
+    <section id="chartPanel" class="panel chart-panel hidden">
+      <div class="panel-title">
+        <h2>电量曲线</h2>
+        <div class="panel-actions">
+          <span id="chartMeta" class="legend-note"></span>
+          <span class="legend-note">浅橙色区域为充电中</span>
+          <button id="resetZoomBtn" class="secondary small">重置缩放</button>
+        </div>
+      </div>
+      <div id="chart"></div>
+    </section>
+
+    <section id="tablePanel" class="panel table-panel hidden">
+      <div class="panel-title">
+        <h2>使用会话</h2>
+        <span class="legend-note">点击任意一行，曲线会缩放到该会话；100→99 一列用于观察满电区间的波动</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>时段</th>
+              <th>时长</th>
+              <th>左耳电量</th>
+              <th>右耳电量</th>
+              <th>耗电速率 L / R</th>
+              <th>100→99 L / R</th>
+              <th>充电盒</th>
+              <th>样本</th>
+            </tr>
+          </thead>
+          <tbody id="sessionsBody"></tbody>
+        </table>
+      </div>
+      <p id="coverageNote" class="coverage"></p>
+    </section>
+
+    <section id="chargingPanel" class="panel table-panel hidden">
+      <div class="panel-title">
+        <h2>充电会话</h2>
+        <span class="legend-note">充电速率按开始充电到 100% 计算；充电盒正值=耗电，负值=回充；点击行可缩放曲线</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>时段</th>
+              <th>时长</th>
+              <th>左耳充电</th>
+              <th>右耳充电</th>
+              <th>充电盒 起→止（速率）</th>
+              <th>充满用时</th>
+              <th>样本</th>
+            </tr>
+          </thead>
+          <tbody id="chargingBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>数据来自 macOS 统一日志（<code>/usr/bin/log</code>），只在本机读取；缓存位于 <code>~/.airpods-analyzer</code>。</p>
+  </footer>
+
+  <script src="vendor/echarts.min.js"></script>
+  <script src="logic.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
