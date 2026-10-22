@@ -3,11 +3,11 @@ from .sessions import build_sessions
 
 
 def build_charging_intervals(samples, merge_gap_seconds: float = 300):
-    """Return contiguous intervals where at least one earbud is charging."""
+    """Return contiguous intervals where any component is charging."""
     timestamps = sorted(
         sample.ts
         for sample in samples
-        if sample.l_charging or sample.r_charging
+        if sample.l_charging or sample.r_charging or sample.c_charging
     )
 
     intervals = []

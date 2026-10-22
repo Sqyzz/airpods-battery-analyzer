@@ -7,7 +7,7 @@ from airpods.parser import Sample
 BASE = datetime(2026, 10, 19, 13, 0, 0)
 
 
-def sample(minutes, l=100, r=100, c=None, lc=False, rc=False, cnx=True):
+def sample(minutes, l=100, r=100, c=None, lc=False, rc=False, cc=False, cnx=True):
     return Sample(
         ts=BASE + timedelta(minutes=minutes),
         address="CC:4B:04:2C:FE:08",
@@ -16,7 +16,7 @@ def sample(minutes, l=100, r=100, c=None, lc=False, rc=False, cnx=True):
         c=c,
         l_charging=lc,
         r_charging=rc,
-        c_charging=False,
+        c_charging=cc,
         cnx=cnx,
     )
 
@@ -101,6 +101,17 @@ class ChargingIntervalTests(unittest.TestCase):
 
     def test_single_ear_charging_counts(self):
         samples = [sample(0, lc=True, rc=False), sample(1, lc=True, rc=False)]
+
+        intervals = build_charging_intervals(samples)
+
+        self.assertEqual(intervals, [(BASE, BASE + timedelta(minutes=1))])
+
+    def test_case_only_charging_counts(self):
+        samples = [
+            sample(0, c=40, cc=True),
+            sample(1, c=41, cc=True),
+            sample(2, c=42, cc=False),
+        ]
 
         intervals = build_charging_intervals(samples)
 

@@ -8,7 +8,7 @@ BASE = datetime(2026, 10, 19, 13, 0, 0)
 ADDR = "CC:4B:04:2C:FE:08"
 
 
-def at(minutes, l=None, r=None, c=None, lc=True, rc=True):
+def at(minutes, l=None, r=None, c=None, lc=True, rc=True, cc=None):
     return Sample(
         ts=BASE + timedelta(minutes=minutes),
         address=ADDR,
@@ -17,7 +17,7 @@ def at(minutes, l=None, r=None, c=None, lc=True, rc=True):
         c=c,
         l_charging=lc,
         r_charging=rc,
-        c_charging=None,
+        c_charging=cc,
         cnx=True,
     )
 
@@ -140,6 +140,62 @@ class BuildChargingSessionsTests(unittest.TestCase):
 
         self.assertEqual(session.c_drain, -10)
         self.assertAlmostEqual(session.c_rate, -20.0)
+
+    def test_case_only_charging_creates_session(self):
+        samples = [
+            at(0, None, None, 40, lc=None, rc=None, cc=True),
+            at(10, None, None, 50, lc=None, rc=None, cc=True),
+            at(20, None, None, 60, lc=None, rc=None, cc=True),
+            at(30, None, None, 60, lc=None, rc=None, cc=False),
+        ]
+
+        sessions = build_charging_sessions(samples)
+
+        self.assertEqual(len(sessions), 1)
+        session = sessions[0]
+        self.assertEqual(session.duration_min, 20)
+        self.assertEqual((session.c_start, session.c_end, session.c_drain), (40, 60, -20))
+        self.assertAlmostEqual(session.c_rate, -60.0)
+        self.assertIsNone(session.l_start)
+        self.assertIsNone(session.r_start)
+        self.assertFalse(session.full)
+
+    def test_case_charging_does_not_merge_with_earlier_earbud_session(self):
+        samples = [
+            at(0, 100, 100, 34),
+            at(5, 100, 100, 34),
+            at(10, 100, 100, 34, lc=False, rc=False, cc=False),
+            at(20, None, None, 40, lc=None, rc=None, cc=True),
+            at(40, None, None, 60, lc=None, rc=None, cc=True),
+            at(50, None, None, 60, lc=None, rc=None, cc=False),
+        ]
+
+        sessions = build_charging_sessions(samples)
+
+        self.assertEqual(len(sessions), 2)
+        self.assertTrue(sessions[0].full)
+        self.assertEqual((sessions[0].c_start, sessions[0].c_end), (34, 34))
+        self.assertIsNone(sessions[1].l_start)
+        self.assertEqual((sessions[1].c_start, sessions[1].c_end), (40, 60))
+
+    def test_earbud_usage_samples_do_not_split_case_charging(self):
+        samples = [
+            at(0, None, None, 40, lc=None, rc=None, cc=True),
+            at(10, None, None, 50, lc=None, rc=None, cc=True),
+            at(15, 97, 97, None, lc=False, rc=False, cc=None),
+            at(20, None, None, 60, lc=None, rc=None, cc=True),
+            at(25, 96, 97, None, lc=False, rc=False, cc=None),
+            at(30, None, None, 70, lc=None, rc=None, cc=True),
+            at(40, None, None, 70, lc=None, rc=None, cc=False),
+        ]
+
+        sessions = build_charging_sessions(samples)
+
+        self.assertEqual(len(sessions), 1)
+        self.assertEqual(sessions[0].duration_min, 30)
+        self.assertEqual((sessions[0].c_start, sessions[0].c_end), (40, 70))
+        self.assertEqual(sessions[0].sample_count, 4)
+        self.assertFalse(sessions[0].full)
 
 
 if __name__ == "__main__":

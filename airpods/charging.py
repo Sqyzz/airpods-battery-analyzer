@@ -121,13 +121,16 @@ def build_charging_sessions(
 ) -> list[ChargingSession]:
     """Split charging periods into sessions.
 
-    A session contains samples where at least one earbud is explicitly
-    charging. Samples with unknown charging flags are ignored so they do
-    not split a session. A session ends when both earbuds are explicitly
-    not charging, or when the gap between charging samples is too large.
+    A session is active while at least one component (left earbud, right
+    earbud, or charging case) is charging. Unknown charging flags keep the
+    last known state of that component, so earbud usage samples that carry
+    no case data do not end a case-charging session. A session ends when
+    every component's last known state is "not charging", or when the gap
+    between charging samples is too large.
     """
     sessions: list[ChargingSession] = []
     current: list[Sample] = []
+    known = {"l": None, "r": None, "c": None}
 
     def flush() -> None:
         if len(current) >= 2:
@@ -135,16 +138,22 @@ def build_charging_sessions(
         current.clear()
 
     for sample in sorted(samples, key=lambda item: item.ts):
-        l_charging = sample.l_charging
-        r_charging = sample.r_charging
+        for key, value in (
+            ("l", sample.l_charging),
+            ("r", sample.r_charging),
+            ("c", sample.c_charging),
+        ):
+            if value is not None:
+                known[key] = value
 
-        if l_charging is True or r_charging is True:
+        if any(value is True for value in known.values()):
             if current and (
                 sample.ts - current[-1].ts
             ).total_seconds() / 60 > gap_minutes:
                 flush()
-            current.append(sample)
-        elif l_charging is False and r_charging is False:
+            if sample.l_charging or sample.r_charging or sample.c_charging:
+                current.append(sample)
+        else:
             flush()
 
     flush()
